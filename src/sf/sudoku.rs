@@ -1,7 +1,3 @@
-use core::num;
-use std::{io, ops::IndexMut, option, task::ready};
-
-
 #[derive(Debug, Clone)]
 pub struct Sudoku {
     pub cells: Vec<Grid>,
@@ -31,6 +27,140 @@ struct GridHome {
 ///
 /// sudoku的普通部分
 impl Sudoku {
+    pub fn string_to_sudoku(sudoku_str: String) -> Sudoku {
+        if sudoku_str.len() != 81 {
+            panic!()
+        }
+        let mut sudoku = Sudoku { cells: Vec::new() };
+
+        for index in 0..81 {
+            let y = index % 9 + 1;
+            let x = index / 9 + 1;
+            /* let value = */
+            let region = ((x - 1) / 3) * 3 + ((y - 1) / 3) + 1;
+
+            let char_at_index = sudoku_str.chars().nth(index).unwrap();
+            let value = match char_at_index {
+                '.' => Value::Null,
+                _ => {
+                    let num = char_at_index.to_digit(10).unwrap() as i8;
+                    Value::Num(num)
+                }
+            };
+
+            sudoku.cells.push(Grid {
+                x: x as i8,
+                y: y as i8,
+                region: region as i8,
+                value,
+                po: Vec::new(),
+            })
+        }
+
+        sudoku
+    }
+
+    pub fn array_to_sudoku(a: [[i8; 9]; 9]) -> Sudoku {
+        let mut sudoku = Sudoku { cells: Vec::new() };
+
+        for i in 0..9 {
+            for j in 0..9 {
+                let value = if a[i][j] != 0 {
+                    Value::Num(a[i][j])
+                } else {
+                    Value::Null
+                };
+                let region = (i / 3) * 3 + (j / 3) + 1;
+
+                sudoku.cells.push(Grid {
+                    x: (i + 1) as i8,
+                    y: (j + 1) as i8,
+                    region: region as i8,
+                    value,
+                    po: Vec::new(),
+                })
+            }
+        }
+
+        sudoku
+    }
+
+    pub fn print_po(&self) {
+        let mut po_len = 0;
+        for index in 0..81 {
+            match self.cells[index].value {
+                Value::Num(_) => {}
+                Value::Null => {
+                    if po_len < self.cells[index].po.len() {
+                        po_len = self.cells[index].po.len()
+                    }
+                }
+            }
+        }
+        let mut index = 0;
+
+        for _i in 0..9 {
+            for _j in 0..9 {
+                match self.cells[index].value {
+                    Value::Null => {
+                        if self.cells[index].po.len() != po_len {
+                            for _i in 0..((po_len - self.cells[index].po.len()) * 3 / 2) {
+                                print!(" ");
+                            }
+                        }
+
+                        print!("{:?}", self.cells[index].po);
+                        if self.cells[index].po.len() != po_len {
+                            for _i in 0..((po_len - self.cells[index].po.len()) * 3 / 2) {
+                                print!(" ");
+                            }
+                        }
+
+                        print!("|");
+                    }
+                    Value::Num(num) => {
+                        for _i in 0..po_len as isize * 3 / 2 - 1 {
+                            print!(" ");
+                        }
+
+                        print!("{:?}", num);
+
+                        for _i in 0..po_len as isize * 3 / 2 {
+                            print!(" ");
+                        }
+                        print!("|");
+                    }
+                }
+                index += 1;
+            }
+            println!("");
+            if _i == 2 || _i == 5 {
+                for _i in 0..(po_len * 3 + 3) * 8 {
+                    print!("-");
+                }
+                println!("");
+            }
+        }
+    }
+
+    pub fn print_sudoku(&self) {
+        let mut index = 0;
+        for _i in 0..9 {
+            for _j in 0..9 {
+                match self.cells[index].value {
+                    Value::Null => {
+                        print!("0, ")
+                    }
+                    Value::Num(num) => {
+                        print!("{:?}, ", num)
+                    }
+                }
+                index += 1;
+            }
+            println!("")
+        }
+    }
+
     fn sudoku_end(&self) -> bool {
         let mut i = 0;
         for index in 0..81 {
@@ -38,11 +168,7 @@ impl Sudoku {
                 i += 1;
             }
         }
-        if i != 0 {
-            false
-        } else {
-            true
-        }
+        if i != 0 { false } else { true }
     }
 
     fn sudoku_err(&self) -> bool {
@@ -58,6 +184,44 @@ impl Sudoku {
                 }
             }
         }
+        let find_any_arr: [[usize; 2]; 9] = [
+            [1, 1],
+            [2, 4],
+            [3, 7],
+            [4, 2],
+            [5, 5],
+            [6, 8],
+            [7, 3],
+            [8, 6],
+            [9, 9],
+        ];
+        let check_duplicates = |indexes: &[usize]| -> bool {
+            let mut numbers = [false; 10];
+            for &index in indexes.iter() {
+                let value = self.cells[index].value;
+                if let Value::Num(number) = value {
+                    let number = number as usize;
+                    if numbers[number] {
+                        return true; // Duplicate number found
+                    } else {
+                        numbers[number] = true;
+                    }
+                }
+            }
+            false // No duplicates found
+        };
+
+        // Check each region in the grid
+        for i in find_any_arr.iter() {
+            let some = Self::find_grid_home(i[0], i[1]);
+            if !check_duplicates(&some.x_home)
+                || !check_duplicates(&some.y_home)
+                || !check_duplicates(&some.region_home)
+            {
+                return true;
+            }
+        }
+
         false
     }
 }
@@ -79,12 +243,31 @@ struct PoPop {
     stack: Vec<StackGrid>,
 }
 
+struct ReturnSudoku {
+    test: usize,
+    sudoku: Sudoku,
+    stack: Vec<StackGrid>,
+}
+
 impl Sudoku {
-    pub fn full_sudoku(&mut self) {
+    pub fn solve_sudoku(&mut self) {
         match Self::backtracking_algorithm(self, Vec::new(), 0) {
-            Ok(sudoku) => {
-                println!("数独解决完毕！！！");
-                sudoku.print_sudoku();
+            Ok(return_sudoku) => {
+                if return_sudoku.test == 0 {
+                    /* println!("没有调用回溯算法就解决了呢"); */
+                    println!("\n\n\n没用回溯算法就解决了呢，杂鱼哥哥果然是个废柴呢，这都不会\n");
+                } else {
+                    /* println!("穷举了{}次", return_sudoku.test); */
+                    println!(
+                        "\n\n\n回溯算法穷举了{}次就解决了，杂鱼哥哥果然是个笨蛋呢\n",
+                        return_sudoku.test
+                    );
+                }
+
+                /* println!("数独解决完毕！！！"); */
+                println!("哼哼~杂鱼哥哥，居然需要我才能解决数独，真是没用呢~");
+
+                return_sudoku.sudoku.print_sudoku();
             }
             Err(_) => todo!(),
         };
@@ -96,40 +279,43 @@ impl Sudoku {
         for index_ in 0..81 {
             if let Value::Num(_) = sudoku.cells[index_].value {
                 continue;
-            } else {
-                let mut bool: bool = false;
-                for i in stack.iter() {
-                    if i.index == index_ {
-                        bool = true;
-                        break;
-                    }
+            }
+
+            let mut bool: bool = false;
+            for i in stack.iter() {
+                if i.index == index_ {
+                    bool = true;
+                    break;
                 }
-                if bool {
-                    continue;
-                }
+            }
+            if bool {
+                continue;
             }
 
             if sudoku.cells[index_].po.len() < min_grid_len {
+                print!(" {:?}", index_);
                 min_grid_len = sudoku.cells[index_].po.len();
+                println!("len={:?}", min_grid_len);
                 grid_min = index_;
             }
         }
         if grid_min == 404 {
             return None;
-        } else {
-            Some(grid_min)
         }
+        Some(grid_min)
     }
 
+    ///
+    /// 控制stack和stack里面po，返回下一个po
     fn po_pop(stack: Vec<StackGrid>) -> PoPop {
         let mut stack_ = stack.clone();
-        println!("{:?}", stack_);
 
-        let end_stack_index = stack_.clone().len() - 1;
+        let end_stack_index = stack_.len() - 1;
         stack_[end_stack_index].po_index += 1;
 
         if stack_[end_stack_index].po_index as usize != stack_[end_stack_index].po.len() {
-            let po_value_ = stack_[end_stack_index].po[stack_[end_stack_index].po_index as usize];
+            let po_value_: i8 =
+                stack_[end_stack_index].po[stack_[end_stack_index].po_index as usize];
 
             return PoPop {
                 po_value: po_value_,
@@ -150,35 +336,38 @@ impl Sudoku {
 
     fn backtracking_algorithm(
         sudoku_: &mut Sudoku,
-        mut stack: Vec<StackGrid>,
-        mut test: isize,
-    ) -> Result<Sudoku, ()> {
-        /////////
-        // 读取控制台的输出
-        /* let mut input = String::new();
+        mut stack_: Vec<StackGrid>,
+        mut test: usize,
+    ) -> Result<ReturnSudoku, ()> {
+        let mut old_sudoku = sudoku_.clone();
 
-        io::stdin()
-            .read_line(&mut input)
-            .expect("Failed to read line");
-        let trim_input = input.trim();
-        if trim_input == "abc".to_string() {
-            println!("结束");
-            panic!();
-        }
-        if trim_input == "po".to_string() {
-            sudoku_.print_po();
-        }
-        println!("穷举了{:?}次", test); */
-        //////////
-        println!("穷举了{:?}次", test);
-        let mut sudoku = sudoku_.clone();
-        if stack.len() == 0 {
-            if let Ok(_) = sudoku.guess_sudoku() {
-                return Ok(sudoku.clone());
+        if test == 0 {
+            if let Ok(_) = sudoku_.guess_sudoku() {
+                return Ok(ReturnSudoku {
+                    test,
+                    sudoku: sudoku_.clone(),
+                    stack: stack_.clone(),
+                });
             }
         }
 
+        /* ************************************************************* */
+        let mut sudoku: Sudoku = sudoku_.clone();
+        let mut stack = stack_.clone();
+        if stack.len() == 0 {
+            if let Ok(_) = sudoku_.guess_sudoku() {
+                return Ok(ReturnSudoku {
+                    test,
+                    sudoku: sudoku_.clone(),
+                    stack,
+                });
+            }
+            sudoku = sudoku_.clone();
+        }
+
         let min_index;
+        println!("\n\n\n\n");
+        sudoku.print_po();
         if let Some(index_) = Self::find_min_po_index(sudoku.clone(), stack.clone()) {
             min_index = index_
         } else {
@@ -204,10 +393,14 @@ impl Sudoku {
 
             match sudoku.fix_backtracking_algorithm_sudoku(stack.clone()) {
                 Ok(_) => {
-                    return Ok(sudoku);
+                    return Ok(ReturnSudoku {
+                        test,
+                        sudoku: sudoku_.clone(),
+                        stack,
+                    });
                 }
                 Err(sudoku__) => {
-                    sudoku_.fix_backtracking_algorithm_sudoku_err(sudoku__);
+                    sudoku.fix_backtracking_algorithm_sudoku_err(sudoku_);
                     return Self::backtracking_algorithm(&mut sudoku, stack, test);
                 }
             }
@@ -218,29 +411,44 @@ impl Sudoku {
         /****************************************************************/
     }
 
-    fn fix_backtracking_algorithm_sudoku_err(&mut self, old_self: Sudoku) {
-        *self = old_self;
+    fn fix_backtracking_algorithm_sudoku_err(&mut self, old_self: &Sudoku) {
+        *self = old_self.clone();
     }
 
-    fn fix_backtracking_algorithm_sudoku(&mut self, stack: Vec<StackGrid>) -> Result<(), Sudoku> {
-        let old_self = self.clone();
+    fn fix_backtracking_algorithm_sudoku(
+        &mut self,
+        stack: Vec<StackGrid>,
+    ) -> Result<(), GuessSudokuErr> {
+        /* let mut sudoku = self.clone(); */
 
         for stack_grid in stack.iter() {
             self.cells[stack_grid.index].value = stack_grid.value;
             self.cells[stack_grid.index].po.clear();
         }
-        if let Ok(_) = self.guess_sudoku() {
-            return Ok(());
-        } else {
-            return Err(old_self);
-        };
+        if self.sudoku_err() {
+            return Err(GuessSudokuErr::PoVecErr);
+        }
+
+        let err;
+
+        match self.guess_sudoku() {
+            Ok(_) => {
+                return Ok(());
+            }
+            Err(return_err) => err = return_err,
+        }
+        match err {
+            GuessSudokuErr::PoVecErr => return Err(GuessSudokuErr::PoVecErr),
+            GuessSudokuErr::UnableContinue => return Err(GuessSudokuErr::UnableContinue),
+            GuessSudokuErr::UserErr => return Err(GuessSudokuErr::UserErr),
+        }
     }
 }
 
-enum GuessSudokuErr {
-    UserErr,
+pub enum GuessSudokuErr {
     PoVecErr,
     UnableContinue,
+    UserErr,
 }
 
 ///
@@ -248,7 +456,7 @@ enum GuessSudokuErr {
 impl Sudoku {
     pub fn guess_sudoku(&mut self) -> Result<(), GuessSudokuErr> {
         self.guess_sudoku_grid();
-        Self::print_po(&self);
+
         let mut test = 0;
         let mut stage_counter = 0;
         loop {
@@ -471,7 +679,6 @@ impl Sudoku {
             return;
         }
     }
-
     fn fix_sole_po(&mut self) -> bool {
         let mut i = 0;
         for index in 0..81 {
@@ -480,14 +687,9 @@ impl Sudoku {
             }
             self.cells[index].value = Value::Num(self.cells[index].po[0]);
             self.cells[index].po = vec![];
-
             i = i + 1;
         }
-        if i == 0 {
-            false
-        } else {
-            true
-        }
+        if i == 0 { false } else { true }
     }
 
     fn find_grid_home(x: usize, y: usize) -> GridHome {
@@ -552,6 +754,25 @@ impl Sudoku {
         } else {
             [60, 61, 62, 69, 70, 71, 78, 79, 80]
         };
+
+        GridHome {
+            x_home,
+            y_home,
+            region_home,
+        }
+    }
+
+    fn _find_grid_home(x: usize, y: usize) -> GridHome {
+        let mut x_home = [0; 9];
+        let mut y_home = [0; 9];
+        let region = ((x - 1) / 3) * 3 + (y - 1) / 3 + 1;
+        let mut region_home = [0; 9];
+
+        for i in 0..9 {
+            x_home[i] = 9 * (x - 1) + i;
+            y_home[i] = (i / 3) * 9 + (y - 1) % 3;
+            region_home[i] = 27 * ((region - 1) / 3) + 3 * ((i / 3) % 3) + (i % 3);
+        }
 
         GridHome {
             x_home,
